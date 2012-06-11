@@ -33,16 +33,15 @@ expected.
 #include "hal.h"
 
 #include "24aa.h"
-#include "message.h"
-#include "i2c_local.h"
-#include "main.h"
+//#include "message.h"
+#include "../i2c_local.h"
+//#include "../main.h"
 
 /*
  ******************************************************************************
  * DEFINES
  ******************************************************************************
  */
-#define EEPOM_I2CD        I2CD2
 #define eeprom_i2caddr    0b1010000
 
 /*
@@ -83,19 +82,6 @@ static uint8_t localtxbuf[EEPROM_TX_DEPTH];
  * EXPORTED FUNCTIONS
  *******************************************************************************
  */
-
-/**
- * @brief     Calculates requred timeout.
- */
-static systime_t calc_timeout(I2CDriver *i2cp, size_t txbytes, size_t rxbytes){
-  const uint32_t bitsinbyte = 10;
-  uint32_t tmo;
-  tmo = ((txbytes + rxbytes + 1) * bitsinbyte * 1000);
-  tmo /= i2cp->config->clock_speed;
-  tmo += 5; /* some additional time to be safer */
-  return MS2ST(tmo);
-}
-
 /**
  * @brief   EEPROM read routine.
  *
@@ -105,7 +91,6 @@ static systime_t calc_timeout(I2CDriver *i2cp, size_t txbytes, size_t rxbytes){
  */
 msg_t eeprom_read(uint32_t addr, uint8_t *buf, size_t len){
   msg_t status = RDY_OK;
-  systime_t tmo = calc_timeout(&EEPOM_I2CD, 2, len);
 
   chBSemWait(&eeprom_sem);
 
@@ -113,10 +98,7 @@ msg_t eeprom_read(uint32_t addr, uint8_t *buf, size_t len){
              "requested data out of device bounds");
 
   eeprom_split_addr(localtxbuf, addr);                /* write address bytes */
-  i2cAcquireBus(&EEPOM_I2CD);
-  status = i2cMasterTransmitTimeout(&EEPOM_I2CD, eeprom_i2caddr,
-                                    localtxbuf, 2, buf, len, tmo);
-  i2cReleaseBus(&EEPOM_I2CD);
+  i2c_transmit(eeprom_i2caddr, localtxbuf, 2, buf, len);
 
   chBSemSignal(&eeprom_sem);
   return status;
@@ -133,7 +115,6 @@ msg_t eeprom_read(uint32_t addr, uint8_t *buf, size_t len){
  */
 msg_t eeprom_write(uint32_t addr, const uint8_t *buf, size_t len){
   msg_t status = RDY_OK;
-  systime_t tmo = calc_timeout(&EEPOM_I2CD, (len + 2), 0);
 
   chBSemWait(&eeprom_sem);
 
@@ -145,11 +126,7 @@ msg_t eeprom_write(uint32_t addr, const uint8_t *buf, size_t len){
 
   eeprom_split_addr(localtxbuf, addr);              /* write address bytes */
   memcpy(&(localtxbuf[2]), buf, len);               /* write data bytes */
-
-  i2cAcquireBus(&EEPOM_I2CD);
-  status = i2cMasterTransmitTimeout(&EEPOM_I2CD, eeprom_i2caddr,
-                                    localtxbuf, (len + 2), NULL, 0, tmo);
-  i2cReleaseBus(&EEPOM_I2CD);
+  i2c_transmit(eeprom_i2caddr, localtxbuf, (len + 2), NULL, 0);
 
   /* wait until EEPROM process data */
   chThdSleepMilliseconds(EEPROM_WRITE_TIME);
@@ -167,6 +144,3 @@ void init_eepromio(void){
 
   chBSemInit(&eeprom_sem, FALSE);
 }
-
-
-
